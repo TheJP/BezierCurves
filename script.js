@@ -18,6 +18,8 @@ var nEven = n % 2 === 0;
  */
 var binomial = [];
 
+const numberOfSegments = 100;
+
 /**
  * Calculates n choose x, where n is the global constant and
  * x is the function parameter.
@@ -40,6 +42,10 @@ var cacheReady = false;
 var vars = {
     lastFrame: 0,
     lastNewCurve: 0,
+    /**
+     * @type {{x: number, y: number}[][]}
+     */
+    curves: [],
 };
 
 /**
@@ -48,8 +54,8 @@ var vars = {
  */
 function canvasDrawFrame(timestamp) {
     // Setup frame
-    window.requestAnimationFrame(canvasDrawFrame);
     if (vars.lastFrame === 0) {
+        window.requestAnimationFrame(canvasDrawFrame);
         // Skip first frame to initialise vars.lastFrame
         vars.lastFrame = timestamp;
         return;
@@ -57,17 +63,47 @@ function canvasDrawFrame(timestamp) {
     const update = timestamp - vars.lastFrame;
     vars.lastFrame = timestamp;
 
-    ctx.strokeStyle = 'lime';
-    ctx.lineWidth = '5';
     ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-    ctx.strokeRect(0, 0, window.innerWidth, window.innerHeight);
 
     // Gate off cache access until it is ready
     if (!cacheReady) {
         return;
     }
-}
 
+    ctx.strokeStyle = 'lime';
+    ctx.lineWidth = '5';
+    
+    const factorX = ctx.canvas.width;
+    const factorY = 0.4 * ctx.canvas.height;
+    function transformX(x) { return x * factorX; }
+    function transformY(y) {
+        return (0.7 * ctx.canvas.height) + (factorY * (y - 0.5));
+    }
+
+    for (const curve of vars.curves) {
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "center";
+        for (const {x, y} of curve) {
+            ctx.strokeText("x", transformX(x), transformY(y));
+        }
+        ctx.beginPath();
+        const moveBy = ctx.canvas.width / numberOfSegments;
+        for (let k = 0; k <= numberOfSegments; ++k) {
+            const t = k / numberOfSegments;
+            let x = 0;
+            let y = 0;
+            for (let i = 0; i <= n; ++i) {
+                const factor = getNChooseX(i) * Math.pow(1 - t, n - i) * Math.pow(t, i);
+                x += factor * transformX(curve[i].x);
+                y += factor * transformY(curve[i].y);
+            }
+            if (k == 0) { ctx.moveTo(x, y); }
+            else { ctx.lineTo(x, y); }
+        }
+        ctx.stroke();
+    }
+    ctx.closePath();
+}
 
 // Start animation when 
 window.addEventListener("load", function onWindowLoad() {
@@ -88,6 +124,7 @@ window.addEventListener("load", function onWindowLoad() {
 
 // Cache calculations
 (() => {
+    // Calculate binomial lookup table using pascals triangle
     let cache = [1];
     let even = true;
     for (let i = 1; i <= n; ++i) {
@@ -102,8 +139,20 @@ window.addEventListener("load", function onWindowLoad() {
         }
         cache = cache2;
     }
+    binomial = cache;
 
-    console.log(cache);
+    // tmp (n + 1 points for bezier curve)
+    const curve = [];
+    const xs = [0];
+    for (let i = 1; i < n; ++i) {
+        xs.push(Math.random());
+    }
+    xs.push(1);
+    xs.sort();
+    for (let i = 0; i <= n; ++i) {
+        curve.push({x: xs[i], y: Math.random()});
+    }
+    vars.curves.push(curve);
 
     cacheReady = true;
 })();
