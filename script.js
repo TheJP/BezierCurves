@@ -180,6 +180,10 @@ var vars = {
      * @type {AnimatedPoint[]}
      */
     mainCurve: [],
+    /**
+     * Used to disable rendering during warmup phase.
+     */
+    enableRendering: false,
 };
 
 /**
@@ -212,30 +216,13 @@ function renderCurve(curve, transformX, transformY) {
 }
 
 /**
- * Animate the main canvas.
- * @param {number} timestamp Time at which the drawing function was called.
+ * Animate the control points of the given curve.
+ * @param {AnimatedPoint[]} curve Curve to be animated.
+ * @param {number} update Milliseconds since the last update.
  */
-function canvasDrawFrame(timestamp) {
-    // Setup frame
-    window.requestAnimationFrame(canvasDrawFrame);
-    if (vars.lastFrame === 0) {
-        // Skip first frame to initialise vars.lastFrame
-        vars.lastFrame = timestamp;
-        return;
-    }
-    const update = timestamp - vars.lastFrame;
-    vars.lastFrame = timestamp;
-
-    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-
-    // Gate off cache access until it is ready
-    if (!cacheReady) {
-        return;
-    }
-
-    // Animate main curve
+function animateCurve(curve, update) {
     for (let i = 0; i <= n; ++i) {
-        const point = vars.mainCurve[i];
+        const point = curve[i];
         const distanceX = point.targetX - point.x;
         const distanceY = point.targetY - point.y;
         if (distanceX * distanceX + distanceY * distanceY <= consts.squaredCurveAnimationSpeed && i !== 0 && i !== n) {
@@ -259,15 +246,28 @@ function canvasDrawFrame(timestamp) {
             }
         }
     }
+}
+
+/**
+ * Animate the main canvas.
+ * @param {number} timestamp Time at which the drawing function was called.
+ */
+function canvasDrawFrame(timestamp) {
+    const update = timestamp - vars.lastFrame;
+    vars.lastFrame = timestamp;
+
+    // Gate off cache access until it is ready
+    if (!cacheReady) {
+        return;
+    }
+
+    // Animate main curve
+    animateCurve(vars.mainCurve, update);
 
     // Create new curves
     if (timestamp - vars.lastNewCurve >= consts.newCurveMs) {
         vars.lastNewCurve = timestamp;
-        const curve = [];
-        for (const point of vars.mainCurve) {
-            curve.push(point.toPoint());
-        }
-        vars.curves.push(curve);
+        vars.curves.push(vars.mainCurve.map(x => x.toPoint()));
     }
 
     // Remove curves until maximum is reached
@@ -284,6 +284,13 @@ function canvasDrawFrame(timestamp) {
         return (0.7 * ctx.canvas.height) + (factorY * (y - 0.5)) + yTransform;
     }
 
+    // Gate off rendering of canvas
+    if (!vars.enableRendering) {
+        return;
+    }
+    // No state updates beyond this point!
+
+    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
     ctx.lineWidth = '3';
     const yPerCurve = -consts.verticalSlideSpeed * ctx.canvas.height;
     const slideFactor = (timestamp - vars.lastNewCurve) / consts.newCurveMs;
@@ -313,6 +320,31 @@ function canvasDrawFrame(timestamp) {
     renderCurve(vars.mainCurve, transformX, transformY);
 }
 
+/**
+ * Creates a loop for continuous rendering.
+ * @param {number} warmup Milliseconds to prerender.
+ */
+function createRenderingLoop(warmup) {
+    vars.lastFrame = -16;
+    let artificialTimestamp = 0;
+    for(; artificialTimestamp <= warmup; artificialTimestamp += 16) {
+        canvasDrawFrame(artificialTimestamp);
+    }
+
+    let firstRealTimestamp = 0;
+    function renderFrame(timestamp) {
+        window.requestAnimationFrame(renderFrame);
+        if (firstRealTimestamp === 0) {
+            firstRealTimestamp = timestamp;
+        } else {
+            canvasDrawFrame(artificialTimestamp + (timestamp - firstRealTimestamp));
+        }
+    }
+
+    vars.enableRendering = true;
+    window.requestAnimationFrame(renderFrame);
+}
+
 // Start animation when 
 window.addEventListener("load", function onWindowLoad() {
     const canvas = window.document.getElementById("canvas");
@@ -327,7 +359,7 @@ window.addEventListener("load", function onWindowLoad() {
     window.addEventListener("resize", onWindowResize);
 
     // Start animation cycle
-    window.requestAnimationFrame(canvasDrawFrame);
+    createRenderingLoop(consts.maxCurves * consts.newCurveMs);
 });
 
 // Cache calculations
