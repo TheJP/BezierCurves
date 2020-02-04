@@ -91,6 +91,70 @@ class Colour {
 }
 
 /**
+ * @type {Map<string, Colour[]>}
+ */
+const colourMap = new Map([
+    ["lgbtqia+", [
+        new Colour(255, 0, 24), // red
+        new Colour(255, 165, 44), // orange
+        new Colour(255, 255, 65), // yellow
+        new Colour(0, 128, 24), // green
+        new Colour(0, 0, 249), // blue
+        new Colour(134, 0, 125), // violet
+    ]],
+    ["aromantic", [
+        new Colour(58, 166, 63), // green
+        new Colour(168, 212, 122), // light green
+        new Colour(255, 255, 255), // white
+        new Colour(170, 170, 170), // gray
+        new Colour(0, 0, 0), // black
+    ]],
+    ["asexual", [
+        new Colour(0, 0, 0), // black
+        new Colour(164, 164, 164), // gray
+        new Colour(255, 255, 255), // white
+        new Colour(129, 0, 129), // violet
+    ]],
+    ["transgender", [
+        new Colour(85, 205, 252), // light blue
+        new Colour(247, 168, 184), // pink
+        new Colour(255, 255, 255), // white
+        new Colour(247, 168, 184), // pink
+        new Colour(85, 205, 252), // light blue
+    ]],
+    ["non-binary", [
+        new Colour(255, 244, 48), // yellow
+        new Colour(255, 255, 255), // white
+        new Colour(156, 89, 209), // violet
+        new Colour(0, 0, 0), // black
+    ]],
+    ["bisexual", [
+        new Colour(214, 2, 112), // purple
+        new Colour(155, 79, 150), // violet
+        new Colour(0, 56, 168), // blue
+    ]],
+    ["intersex", [
+        new Colour(255, 218, 0), // yellow
+        new Colour(122, 0, 172), // violet
+    ]],
+    ["pansexual", [
+        new Colour(255, 27, 141), // pink
+        new Colour(255, 218, 0), // pink
+        new Colour(27, 179, 255), // light blue
+    ]],
+    ["lesbian", [
+        new Colour(214, 41, 0), // red
+        new Colour(255, 155, 85), // orange
+        new Colour(255, 255, 255), // white
+        new Colour(212, 97, 166), // pink
+        new Colour(165, 0, 98), // dark pink
+    ]],
+
+]);
+const colourIndices = Array.from(colourMap.keys());
+let currentColoursIndex = 0;
+
+/**
  * Animation constants.
  */
 const consts = {
@@ -123,17 +187,6 @@ const consts = {
      * Speed with which the curves slide upwards vertically.
      */
     verticalSlideSpeed: 0.01,
-    /**
-     * Colurs to render the lines in.
-     */
-    colours: [
-        new Colour(255, 0, 24), // red
-        new Colour(255, 165, 44), // orange
-        new Colour(255, 255, 65), // yellow
-        new Colour(0, 128, 24), // green
-        new Colour(0, 0, 249), // blue
-        new Colour(134, 0, 125), // violet
-    ],
 }
 consts.squaredCurveAnimationSpeed = consts.curveAnimationSpeed * consts.curveAnimationSpeed;
 
@@ -292,23 +345,24 @@ function canvasDrawFrame(timestamp) {
 
     ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
     ctx.lineWidth = '3';
+    const colours = colourMap.get(colourIndices[currentColoursIndex]);
     const yPerCurve = -consts.verticalSlideSpeed * ctx.canvas.height;
     const slideFactor = (timestamp - vars.lastNewCurve) / consts.newCurveMs;
     yTransform += yPerCurve * (vars.curves.length - 1) + yPerCurve * slideFactor;
     let colourIndex = 0;
     for (let i = 0; i < vars.curves.length; ++i) {
         // Determine colour of curve
-        let colour = consts.colours[colourIndex];
-        const nextColourIndex = Math.floor(consts.colours.length * (i / consts.maxCurves));
+        let colour = colours[colourIndex];
+        const nextColourIndex = Math.floor(colours.length * (i / consts.maxCurves));
         if (colourIndex !== nextColourIndex) {
             // Interpolate correct colour for curve
-            colour = consts.colours[nextColourIndex].interpolate(consts.colours[colourIndex], slideFactor);
+            colour = colours[nextColourIndex].interpolate(colours[colourIndex], slideFactor);
             colourIndex = nextColourIndex;
         }
         ctx.strokeStyle = colour.toCSS();
         // Fade out top line
         if (i == 0) {
-            ctx.strokeStyle = consts.colours[0].toCSSWithA(1 - slideFactor);
+            ctx.strokeStyle = colours[0].toCSSWithA(1 - slideFactor);
         }
         renderCurve(vars.curves[i], transformX, transformY);
         yTransform -= yPerCurve;
@@ -316,7 +370,7 @@ function canvasDrawFrame(timestamp) {
 
     // Render main curve
     yTransform = 0;
-    ctx.strokeStyle = consts.colours[consts.colours.length - 1].toCSS();
+    ctx.strokeStyle = colours[colours.length - 1].toCSS();
     renderCurve(vars.mainCurve, transformX, transformY);
 }
 
@@ -345,9 +399,14 @@ function createRenderingLoop(warmup) {
     window.requestAnimationFrame(renderFrame);
 }
 
+function onCanvasClicked() {
+    currentColoursIndex = (currentColoursIndex + 1) % colourIndices.length;
+}
+
 // Start animation when 
 window.addEventListener("load", function onWindowLoad() {
     const canvas = window.document.getElementById("canvas");
+    canvas.addEventListener("click", onCanvasClicked);
     ctx = canvas.getContext("2d");
 
     // Resize canvas correctly
