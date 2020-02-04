@@ -59,28 +59,32 @@ const consts = {
     /**
      * How many milliseconds until a new curve is spawned.
      */
-    newCurveMs: 1000,
+    newCurveMs: 800,
     /**
      * Amount of curves present at once.
      */
-    maxCurves: 30,
+    maxCurves: 50,
     /**
      * Amount of line segments that are used per drawn curve.
      */
     numberOfSegments: 100,
     /**
-     * Maximal amount that end points may move.
-     */
-    endPointsMaxVertical: 0.1,
-    /**
-     * Maximal amount that all other control points may move.
-     */
-    controlPointsMax: 0.2,
-    /**
      * Speed with which the curve points move on the [0, 1]^2 plane.
      */
     curveAnimationSpeed: 0.01,
     squaredCurveAnimationSpeed: 0,
+    /**
+     * Restrict movement per point further in the x direction.
+     */
+    maxSegmentPerPoint: 0.3,
+    /**
+     * How much the curve points are limited vertically.
+     */
+    verticalCompression: 0.3,
+    /**
+     * Speed with which the curves slide upwards vertically.
+     */
+    verticalSlideSpeed: 0.01,
 }
 consts.squaredCurveAnimationSpeed = consts.curveAnimationSpeed * consts.curveAnimationSpeed;
 
@@ -187,13 +191,11 @@ function canvasDrawFrame(timestamp) {
         const distanceX = point.targetX - point.x;
         const distanceY = point.targetY - point.y;
         let calculateSteps = false;
-        if (distanceX * distanceX + distanceY * distanceY <= consts.squaredCurveAnimationSpeed) {
+        if (distanceX * distanceX + distanceY * distanceY <= consts.squaredCurveAnimationSpeed && i !== 0 && i !== n) {
             // Choose new targets
             point.x = point.targetX;
             point.y = point.targetY;
-            if (i !== 0 && i !== n) {
-                point.targetX = Math.random();
-            }
+            point.targetX = Math.random() * consts.maxSegmentPerPoint + (i / n) * (1 - consts.maxSegmentPerPoint);
             point.targetY = Math.random();
             calculateSteps = true;
         } else {
@@ -225,17 +227,17 @@ function canvasDrawFrame(timestamp) {
 
     // Render all curves
     ctx.strokeStyle = 'lime';
-    ctx.lineWidth = '2';
+    ctx.lineWidth = '3';
     
     const factorX = ctx.canvas.width;
-    const factorY = 0.4 * ctx.canvas.height;
+    const factorY = consts.verticalCompression * ctx.canvas.height;
     let yTransform = 0;
     function transformX(x) { return x * factorX; }
     function transformY(y) {
-        return (0.7 * ctx.canvas.height) + (factorY * (y - 0.5)) + yTransform;
+        return ((1 - consts.verticalCompression) * ctx.canvas.height) + (factorY * (y - 0.5)) + yTransform;
     }
 
-    const yPerCurve = (0.3 * ctx.canvas.height) / -consts.maxCurves;
+    const yPerCurve = -consts.verticalSlideSpeed * ctx.canvas.height;
     renderCurve(vars.mainCurve, transformX, transformY);
     yTransform += yPerCurve * ((timestamp - vars.lastNewCurve) / consts.newCurveMs);
     for (let i = vars.curves.length - 1; i >= 0; --i) {
@@ -285,11 +287,12 @@ window.addEventListener("load", function onWindowLoad() {
     for (let i = 1; i < n; ++i) {
         xs.push(Math.random());
     }
-    xs.push(1);
     xs.sort();
-    for (let i = 0; i <= n; ++i) {
+    vars.mainCurve.push(new AnimatedPoint(0, 0.5));
+    for (let i = 1; i < n; ++i) {
         vars.mainCurve.push(new AnimatedPoint(xs[i], Math.random()));
     }
+    vars.mainCurve.push(new AnimatedPoint(1, 0.5));
 
     cacheReady = true;
 })();
