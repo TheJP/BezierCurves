@@ -76,6 +76,40 @@ const consts = {
      * Maximal amount that all other control points may move.
      */
     controlPointsMax: 0.2,
+    /**
+     * Speed with which the curve points move on the [0, 1]^2 plane.
+     */
+    curveAnimationSpeed: 0.01,
+    squaredCurveAnimationSpeed: 0,
+}
+consts.squaredCurveAnimationSpeed = consts.curveAnimationSpeed * consts.curveAnimationSpeed;
+
+class Point {
+    /**
+     * @param {number} x X coordinate.
+     * @param {number} y Y coordintate.
+     */
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+    }
+}
+
+class AnimatedPoint {
+    /**
+     * @param {number} x X coordinate.
+     * @param {number} y Y coordintate.
+     */
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.targetX = x;
+        this.targetY = y;
+        this.stepX = 0;
+        this.stepY = 0;
+    }
+
+    toPoint() { return new Point(this.x, this.y); }
 }
 
 /**
@@ -86,10 +120,44 @@ var vars = {
     // Make sure a curve is spawned
     lastNewCurve: -consts.newCurveMs,
     /**
-     * @type {{x: number, y: number}[][]}
+     * @type {Point[][]}
      */
     curves: [],
+    /**
+     * @type {AnimatedPoint[]}
+     */
+    mainCurve: [],
 };
+
+/**
+ * Renders the given curve to the main canvas.
+ * @param {Point[]} curve Curve to be rendered.
+ * @param {(x: number) => number} transformX Function used to transfrom [0, 1] range to x coordinate.
+ * @param {(y: number) => number} transformY Function used to transfrom [0, 1] range to y coordinate.
+ */
+function renderCurve(curve, transformX, transformY) {
+    // ctx.textBaseline = "middle";
+    // ctx.textAlign = "center";
+    // for (const {x, y} of curve) {
+    //     ctx.strokeText("x", transformX(x), transformY(y));
+    // }
+    ctx.beginPath();
+    const moveBy = ctx.canvas.width / consts.numberOfSegments;
+    for (let k = 0; k <= consts.numberOfSegments; ++k) {
+        const t = k / consts.numberOfSegments;
+        let x = 0;
+        let y = 0;
+        for (let i = 0; i <= n; ++i) {
+            const factor = getNChooseX(i) * Math.pow(1 - t, n - i) * Math.pow(t, i);
+            x += factor * transformX(curve[i].x);
+            y += factor * transformY(curve[i].y);
+        }
+        if (k == 0) { ctx.moveTo(x, y); }
+        else { ctx.lineTo(x, y); }
+    }
+    ctx.stroke();
+    ctx.closePath();
+}
 
 /**
  * Animate the main canvas.
@@ -113,18 +181,40 @@ function canvasDrawFrame(timestamp) {
         return;
     }
 
+    // Animate main curve
+    for (let i = 0; i <= n; ++i) {
+        const point = vars.mainCurve[i];
+        const distanceX = point.targetX - point.x;
+        const distanceY = point.targetY - point.y;
+        let calculateSteps = false;
+        if (distanceX * distanceX + distanceY * distanceY <= consts.squaredCurveAnimationSpeed) {
+            // Choose new targets
+            point.x = point.targetX;
+            point.y = point.targetY;
+            if (i !== 0 && i !== n) {
+                point.targetX = Math.random();
+            }
+            point.targetY = Math.random();
+            calculateSteps = true;
+        } else {
+            // Animate points with fixed speed towards target
+            point.x += point.stepX * consts.squaredCurveAnimationSpeed * update;
+            point.y += point.stepY * consts.squaredCurveAnimationSpeed * update;
+        }
+        if (calculateSteps || point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1) {
+            const norm = Math.sqrt(point.targetX * point.targetX + point.targetY * point.targetY);
+            point.stepX = (point.targetX - point.x) / norm;
+            point.stepY = (point.targetY - point.y) / norm;
+        }
+    }
+
+    // Create new curves
     if (timestamp - vars.lastNewCurve >= consts.newCurveMs) {
         vars.lastNewCurve = timestamp;
-        const base = vars.curves[vars.curves.length - 1];
         const curve = [];
-        curve.push({x: 0, y: nclamp(base[0].y + consts.endPointsMaxVertical * (Math.random() - 0.5))});
-        for (let i = 1; i < n; ++i) {
-            curve.push({
-                x: nclamp(base[i].x + consts.controlPointsMax * (Math.random() - 0.5)),
-                y: nclamp(base[i].y + consts.controlPointsMax * (Math.random() - 0.5))
-            });
+        for (const point of vars.mainCurve) {
+            curve.push(point.toPoint());
         }
-        curve.push({x: 1, y: nclamp(base[base.length - 1].y + 0.1 * (Math.random() - 0.5))});
         vars.curves.push(curve);
     }
 
@@ -146,29 +236,10 @@ function canvasDrawFrame(timestamp) {
     }
 
     const yPerCurve = (0.3 * ctx.canvas.height) / -consts.maxCurves;
-    yTransform -= yPerCurve * ((timestamp - vars.lastNewCurve) / consts.newCurveMs);
-    for (const curve of vars.curves) {
-        // ctx.textBaseline = "middle";
-        // ctx.textAlign = "center";
-        // for (const {x, y} of curve) {
-        //     ctx.strokeText("x", transformX(x), transformY(y));
-        // }
-        ctx.beginPath();
-        const moveBy = ctx.canvas.width / consts.numberOfSegments;
-        for (let k = 0; k <= consts.numberOfSegments; ++k) {
-            const t = k / consts.numberOfSegments;
-            let x = 0;
-            let y = 0;
-            for (let i = 0; i <= n; ++i) {
-                const factor = getNChooseX(i) * Math.pow(1 - t, n - i) * Math.pow(t, i);
-                x += factor * transformX(curve[i].x);
-                y += factor * transformY(curve[i].y);
-            }
-            if (k == 0) { ctx.moveTo(x, y); }
-            else { ctx.lineTo(x, y); }
-        }
-        ctx.stroke();
-        ctx.closePath();
+    renderCurve(vars.mainCurve, transformX, transformY);
+    yTransform += yPerCurve * ((timestamp - vars.lastNewCurve) / consts.newCurveMs);
+    for (let i = vars.curves.length - 1; i >= 0; --i) {
+        renderCurve(vars.curves[i], transformX, transformY);
         yTransform += yPerCurve;
     }
 }
@@ -209,8 +280,7 @@ window.addEventListener("load", function onWindowLoad() {
     }
     binomial = cache;
 
-    // Create seeding curve
-    const curve = [];
+    // Create main curve
     const xs = [0];
     for (let i = 1; i < n; ++i) {
         xs.push(Math.random());
@@ -218,9 +288,8 @@ window.addEventListener("load", function onWindowLoad() {
     xs.push(1);
     xs.sort();
     for (let i = 0; i <= n; ++i) {
-        curve.push({x: xs[i], y: Math.random()});
+        vars.mainCurve.push(new AnimatedPoint(xs[i], Math.random()));
     }
-    vars.curves.push(curve);
 
     cacheReady = true;
 })();
