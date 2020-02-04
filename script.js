@@ -195,7 +195,6 @@ function renderCurve(curve, transformX, transformY) {
     //     ctx.strokeText("x", transformX(x), transformY(y));
     // }
     ctx.beginPath();
-    const moveBy = ctx.canvas.width / consts.numberOfSegments;
     for (let k = 0; k <= consts.numberOfSegments; ++k) {
         const t = k / consts.numberOfSegments;
         let x = 0;
@@ -287,20 +286,31 @@ function canvasDrawFrame(timestamp) {
 
     ctx.lineWidth = '3';
     const yPerCurve = -consts.verticalSlideSpeed * ctx.canvas.height;
+    const slideFactor = (timestamp - vars.lastNewCurve) / consts.newCurveMs;
+    yTransform += yPerCurve * (vars.curves.length - 1) + yPerCurve * slideFactor;
+    let colourIndex = 0;
+    for (let i = 0; i < vars.curves.length; ++i) {
+        // Determine colour of curve
+        let colour = consts.colours[colourIndex];
+        const nextColourIndex = Math.floor(consts.colours.length * (i / consts.maxCurves));
+        if (colourIndex !== nextColourIndex) {
+            // Interpolate correct colour for curve
+            colour = consts.colours[nextColourIndex].interpolate(consts.colours[colourIndex], slideFactor);
+            colourIndex = nextColourIndex;
+        }
+        ctx.strokeStyle = colour.toCSS();
+        // Fade out top line
+        if (i == 0) {
+            ctx.strokeStyle = consts.colours[0].toCSSWithA(1 - slideFactor);
+        }
+        renderCurve(vars.curves[i], transformX, transformY);
+        yTransform -= yPerCurve;
+    }
+
+    // Render main curve
+    yTransform = 0;
     ctx.strokeStyle = consts.colours[consts.colours.length - 1].toCSS();
     renderCurve(vars.mainCurve, transformX, transformY);
-    const slideFactor = (timestamp - vars.lastNewCurve) / consts.newCurveMs;
-    yTransform += yPerCurve * slideFactor;
-    let colourIndex = 0;
-    for (let i = vars.curves.length - 1; i >= 0; --i) {
-        const nextColourIndex = Math.floor(consts.colours.length * ((i - 1) / consts.maxCurves));
-        const colour = colourIndex === nextColourIndex ? consts.colours[colourIndex] :
-            consts.colours[colourIndex].interpolate(consts.colours[nextColourIndex], slideFactor);
-        colourIndex = nextColourIndex;
-        ctx.strokeStyle = colour.toCSS();
-        renderCurve(vars.curves[i], transformX, transformY);
-        yTransform += yPerCurve;
-    }
 }
 
 // Start animation when 
