@@ -9,7 +9,7 @@ var ctx = null;
 /**
  * Dimension of the bezier curves.
  */
-const n = 10;
+const n = 12;
 var nEven = n % 2 === 0;
 
 /**
@@ -47,10 +47,48 @@ function nclamp(x) {
 }
 
 /**
+ * Linear interpolation between the two given numbers.
+ * @param {number} x Interpolation number 1.
+ * @param {number} y Interpolation number 2.
+ * @param {number} factor Interpolation factor in [0, 1] range (0=x, 1=y).
+ */
+function interpolate(x, y, factor) {
+    return x + factor * (y - x);
+}
+
+/**
  * Variable that gates animation to prevent null-reference exceptions or
  * access of uninitialised cache.
  */
 var cacheReady = false;
+
+class Colour {
+    /**
+     * @param {number} r Red.
+     * @param {number} g Green.
+     * @param {number} b Blue.
+     */
+    constructor(r, g, b) {
+        this.r = r;
+        this.g = g;
+        this.b = b;
+    }
+
+    toCSS() { return `rgb(${this.r}, ${this.g}, ${this.b})`; }
+    toCSSWithA(a) { return `rgba(${this.r}, ${this.g}, ${this.b}, ${a})`; }
+    
+    /**
+     * Linear interpolation between this colour and the given other colour.
+     * @param {Colour} other Colour to interpolate with.
+     * @param {number} factor Interpolation factor in [0, 1] range (0=this colour, 1=the other colour).
+     */
+    interpolate(other, factor) {
+        return new Colour(
+            interpolate(this.r, other.r, factor),
+            interpolate(this.g, other.g, factor),
+            interpolate(this.b, other.b, factor));
+    }
+}
 
 /**
  * Animation constants.
@@ -80,11 +118,22 @@ const consts = {
     /**
      * How much the curve points are limited vertically.
      */
-    verticalCompression: 0.3,
+    verticalCompression: 0.35,
     /**
      * Speed with which the curves slide upwards vertically.
      */
     verticalSlideSpeed: 0.01,
+    /**
+     * Colurs to render the lines in.
+     */
+    colours: [
+        new Colour(255, 0, 24), // red
+        new Colour(255, 165, 44), // orange
+        new Colour(255, 255, 65), // yellow
+        new Colour(0, 128, 24), // green
+        new Colour(0, 0, 249), // blue
+        new Colour(134, 0, 125), // violet
+    ],
 }
 consts.squaredCurveAnimationSpeed = consts.curveAnimationSpeed * consts.curveAnimationSpeed;
 
@@ -190,23 +239,25 @@ function canvasDrawFrame(timestamp) {
         const point = vars.mainCurve[i];
         const distanceX = point.targetX - point.x;
         const distanceY = point.targetY - point.y;
-        let calculateSteps = false;
         if (distanceX * distanceX + distanceY * distanceY <= consts.squaredCurveAnimationSpeed && i !== 0 && i !== n) {
             // Choose new targets
             point.x = point.targetX;
             point.y = point.targetY;
             point.targetX = Math.random() * consts.maxSegmentPerPoint + (i / n) * (1 - consts.maxSegmentPerPoint);
             point.targetY = Math.random();
-            calculateSteps = true;
+            const norm = Math.sqrt(point.targetX * point.targetX + point.targetY * point.targetY);
+            point.stepX = (point.targetX - point.x) / norm;
+            point.stepY = (point.targetY - point.y) / norm;
         } else {
             // Animate points with fixed speed towards target
             point.x += point.stepX * consts.squaredCurveAnimationSpeed * update;
             point.y += point.stepY * consts.squaredCurveAnimationSpeed * update;
-        }
-        if (calculateSteps || point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1) {
-            const norm = Math.sqrt(point.targetX * point.targetX + point.targetY * point.targetY);
-            point.stepX = (point.targetX - point.x) / norm;
-            point.stepY = (point.targetY - point.y) / norm;
+            // Hotfix for the case that update is so big that the target is skipped
+            if (Math.pow(point.targetX - point.x, 2) + Math.pow(point.targetY - point.y, 2) > distanceX * distanceX + distanceY * distanceY) {
+                console.log(point.x, point.y, point.targetX, point.targetY);
+                point.x = point.targetX;
+                point.y = point.targetY;
+            }
         }
     }
 
@@ -226,21 +277,27 @@ function canvasDrawFrame(timestamp) {
     }
 
     // Render all curves
-    ctx.strokeStyle = 'lime';
-    ctx.lineWidth = '3';
-    
     const factorX = ctx.canvas.width;
     const factorY = consts.verticalCompression * ctx.canvas.height;
     let yTransform = 0;
     function transformX(x) { return x * factorX; }
     function transformY(y) {
-        return ((1 - consts.verticalCompression) * ctx.canvas.height) + (factorY * (y - 0.5)) + yTransform;
+        return (0.7 * ctx.canvas.height) + (factorY * (y - 0.5)) + yTransform;
     }
 
+    ctx.lineWidth = '3';
     const yPerCurve = -consts.verticalSlideSpeed * ctx.canvas.height;
+    ctx.strokeStyle = consts.colours[consts.colours.length - 1].toCSS();
     renderCurve(vars.mainCurve, transformX, transformY);
-    yTransform += yPerCurve * ((timestamp - vars.lastNewCurve) / consts.newCurveMs);
+    const slideFactor = (timestamp - vars.lastNewCurve) / consts.newCurveMs;
+    yTransform += yPerCurve * slideFactor;
+    let colourIndex = 0;
     for (let i = vars.curves.length - 1; i >= 0; --i) {
+        const nextColourIndex = Math.floor(consts.colours.length * ((i - 1) / consts.maxCurves));
+        const colour = colourIndex === nextColourIndex ? consts.colours[colourIndex] :
+            consts.colours[colourIndex].interpolate(consts.colours[nextColourIndex], slideFactor);
+        colourIndex = nextColourIndex;
+        ctx.strokeStyle = colour.toCSS();
         renderCurve(vars.curves[i], transformX, transformY);
         yTransform += yPerCurve;
     }
@@ -288,11 +345,11 @@ window.addEventListener("load", function onWindowLoad() {
         xs.push(Math.random());
     }
     xs.sort();
-    vars.mainCurve.push(new AnimatedPoint(0, 0.5));
+    vars.mainCurve.push(new AnimatedPoint(-0.1, 0.5));
     for (let i = 1; i < n; ++i) {
         vars.mainCurve.push(new AnimatedPoint(xs[i], Math.random()));
     }
-    vars.mainCurve.push(new AnimatedPoint(1, 0.5));
+    vars.mainCurve.push(new AnimatedPoint(1.1, 0.5));
 
     cacheReady = true;
 })();
