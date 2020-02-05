@@ -139,7 +139,7 @@ const colourMap = new Map([
     ]],
     ["pansexual", [
         new Colour(255, 27, 141), // pink
-        new Colour(255, 218, 0), // pink
+        new Colour(255, 218, 0), // yellow
         new Colour(27, 179, 255), // light blue
     ]],
     ["lesbian", [
@@ -293,7 +293,6 @@ function animateCurve(curve, update) {
             point.y += point.stepY * consts.squaredCurveAnimationSpeed * update;
             // Hotfix for the case that update is so big that the target is skipped
             if (Math.pow(point.targetX - point.x, 2) + Math.pow(point.targetY - point.y, 2) > distanceX * distanceX + distanceY * distanceY) {
-                console.log(point.x, point.y, point.targetX, point.targetY);
                 point.x = point.targetX;
                 point.y = point.targetY;
             }
@@ -386,13 +385,19 @@ function createRenderingLoop(warmup) {
     }
 
     let firstRealTimestamp = 0;
+    let lastTimestamp = 0;
     function renderFrame(timestamp) {
         window.requestAnimationFrame(renderFrame);
         if (firstRealTimestamp === 0) {
             firstRealTimestamp = timestamp;
         } else {
+            if (timestamp - lastTimestamp > 1000){
+                // Compensate big time gaps (e.g. when the browser tab is inactive for a while)
+                firstRealTimestamp += timestamp - lastTimestamp;
+            }
             canvasDrawFrame(artificialTimestamp + (timestamp - firstRealTimestamp));
         }
+        lastTimestamp = timestamp;
     }
 
     vars.enableRendering = true;
