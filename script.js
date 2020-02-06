@@ -9,8 +9,7 @@ var ctx = null;
 /**
  * Dimension of the bezier curves.
  */
-const n = 12;
-var nEven = n % 2 === 0;
+var n = 12;
 
 /**
  * Cache array for faster binomial calculation.
@@ -274,11 +273,11 @@ function renderCurve(curve, transformX, transformY) {
  * @param {number} update Milliseconds since the last update.
  */
 function animateCurve(curve, update) {
-    for (let i = 0; i <= n; ++i) {
+    for (let i = 1; i < n; ++i) {
         const point = curve[i];
         const distanceX = point.targetX - point.x;
         const distanceY = point.targetY - point.y;
-        if (distanceX * distanceX + distanceY * distanceY <= consts.squaredCurveAnimationSpeed && i !== 0 && i !== n) {
+        if (distanceX * distanceX + distanceY * distanceY <= consts.squaredCurveAnimationSpeed) {
             // Choose new targets
             point.x = point.targetX;
             point.y = point.targetY;
@@ -427,11 +426,13 @@ window.addEventListener("load", function onWindowLoad() {
 });
 
 // Cache calculations
-(() => {
+function recalculateCache(newN) {
+    cacheReady = false;
+
     // Calculate binomial lookup table using pascals triangle
     let cache = [1];
     let even = true;
-    for (let i = 1; i <= n; ++i) {
+    for (let i = 1; i <= newN; ++i) {
         even = !even;
         let cache2 = [1];
         for (let j = 1; j < cache.length + (even ? 1 : 0); ++j) {
@@ -443,19 +444,26 @@ window.addEventListener("load", function onWindowLoad() {
         }
         cache = cache2;
     }
-    binomial = cache;
 
     // Create main curve
     const xs = [0];
-    for (let i = 1; i < n; ++i) {
+    for (let i = 1; i < newN; ++i) {
         xs.push(Math.random());
     }
     xs.sort();
-    vars.mainCurve.push(new AnimatedPoint(-0.1, 0.5));
-    for (let i = 1; i < n; ++i) {
-        vars.mainCurve.push(new AnimatedPoint(xs[i], Math.random()));
+    const curve = [];
+    curve.push(new AnimatedPoint(-0.1, 0.5));
+    for (let i = 1; i < newN; ++i) {
+        curve.push(new AnimatedPoint(xs[i], Math.random()));
     }
-    vars.mainCurve.push(new AnimatedPoint(1.1, 0.5));
+    curve.push(new AnimatedPoint(1.1, 0.5));
 
+    // Update to new state
+    n = newN;
+    vars.curves = [];
+    vars.mainCurve = curve;
+    binomial = cache;
     cacheReady = true;
-})();
+}
+
+recalculateCache(n);
