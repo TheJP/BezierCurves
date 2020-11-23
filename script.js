@@ -240,11 +240,12 @@ var vars = {
 
 /**
  * Renders the given curve to the main canvas.
+ * @param {CanvasRenderingContext2D} ctx Canvas context to draw the curve on.
  * @param {Point[]} curve Curve to be rendered.
  * @param {(x: number) => number} transformX Function used to transfrom [0, 1] range to x coordinate.
  * @param {(y: number) => number} transformY Function used to transfrom [0, 1] range to y coordinate.
  */
-function renderCurve(curve, transformX, transformY) {
+function renderCurve(ctx, curve, transformX, transformY) {
     // ctx.textBaseline = "middle";
     // ctx.textAlign = "center";
     // for (const {x, y} of curve) {
@@ -270,9 +271,9 @@ function renderCurve(curve, transformX, transformY) {
 /**
  * Animate the control points of the given curve.
  * @param {AnimatedPoint[]} curve Curve to be animated.
- * @param {number} update Milliseconds since the last update.
+ * @param {number} timespan Milliseconds since the last update.
  */
-function animateCurve(curve, update) {
+function animateCurve(curve, timespan) {
     for (let i = 1; i < n; ++i) {
         const point = curve[i];
         const distanceX = point.targetX - point.x;
@@ -288,10 +289,12 @@ function animateCurve(curve, update) {
             point.stepY = (point.targetY - point.y) / norm;
         } else {
             // Animate points with fixed speed towards target
-            point.x += point.stepX * consts.squaredCurveAnimationSpeed * update;
-            point.y += point.stepY * consts.squaredCurveAnimationSpeed * update;
+            point.x += point.stepX * consts.squaredCurveAnimationSpeed * timespan;
+            point.y += point.stepY * consts.squaredCurveAnimationSpeed * timespan;
             // Hotfix for the case that update is so big that the target is skipped
-            if (Math.pow(point.targetX - point.x, 2) + Math.pow(point.targetY - point.y, 2) > distanceX * distanceX + distanceY * distanceY) {
+            const newDistanceX = point.targetX - point.x;
+            const newDistanceY = point.targetY - point.y;
+            if (newDistanceX * newDistanceX + newDistanceY * newDistanceY > distanceX * distanceX + distanceY * distanceY) {
                 point.x = point.targetX;
                 point.y = point.targetY;
             }
@@ -299,12 +302,100 @@ function animateCurve(curve, update) {
     }
 }
 
+class Animation {
+    /**
+     * Update animation state.
+     * @param {number} timespan Milliseconds since the last update.
+     */
+    update(timespan) { throw "abstract method stub"; }
+
+    /**
+     * Draw animation objects.
+     * @param {CanvasRenderingContext2D} ctx Canvas context to draw on.
+     */
+    draw(ctx) { throw "abstract method stub"; }
+}
+
+/**
+ * Sliding animation which animates a single curve and slides duplicates of it upwards.
+ */
+class SlidingAnimation extends Animation {
+    /**
+     * Update animation state.
+     * @param {number} timestamp Time at which the function was called.
+     * @param {number} timespan Milliseconds since the last update.
+     */
+    update(timestamp, timespan) {
+        // Animate main curve
+        animateCurve(vars.mainCurve, timespan);
+    
+        // Create new curves
+        if (timestamp - vars.lastNewCurve >= consts.newCurveMs) {
+            vars.lastNewCurve = timestamp;
+            vars.curves.push(vars.mainCurve.map(x => x.toPoint()));
+        }
+    
+        // Remove curves until maximum is reached
+        while (vars.curves.length > consts.maxCurves) {
+            vars.curves.splice(0, 1);
+        }
+    }
+
+    /**
+     * Draw animation objects.
+     * @param {CanvasRenderingContext2D} ctx Canvas context to draw on.
+     * @param {number} timestamp Time at which the function was called.
+     */
+    draw(ctx, timestamp) {
+        // Render all curves
+        const factorX = ctx.canvas.width;
+        const factorY = consts.verticalCompression * ctx.canvas.height;
+        let yTransform = 0;
+        function transformX(x) { return x * factorX; }
+        function transformY(y) {
+            return (0.7 * ctx.canvas.height) + (factorY * (y - 0.5)) + yTransform;
+        }
+
+        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+        ctx.lineWidth = '3';
+        const colours = colourMap.get(colourIndices[currentColoursIndex]);
+        const yPerCurve = -consts.verticalSlideSpeed * ctx.canvas.height;
+        const slideFactor = (timestamp - vars.lastNewCurve) / consts.newCurveMs;
+        yTransform += yPerCurve * (vars.curves.length - 1) + yPerCurve * slideFactor;
+        let colourIndex = 0;
+        for (let i = 0; i < vars.curves.length; ++i) {
+            // Determine colour of curve
+            let colour = colours[colourIndex];
+            const nextColourIndex = Math.floor(colours.length * (i / consts.maxCurves));
+            if (colourIndex !== nextColourIndex) {
+                // Interpolate correct colour for curve
+                colour = colours[nextColourIndex].interpolate(colours[colourIndex], slideFactor);
+                colourIndex = nextColourIndex;
+            }
+            ctx.strokeStyle = colour.toCSS();
+            // Fade out top line
+            if (i == 0) {
+                ctx.strokeStyle = colours[0].toCSSWithA(1 - slideFactor);
+            }
+            renderCurve(ctx, vars.curves[i], transformX, transformY);
+            yTransform -= yPerCurve;
+        }
+
+        // Render main curve
+        yTransform = 0;
+        ctx.strokeStyle = colours[colours.length - 1].toCSS();
+        renderCurve(ctx, vars.mainCurve, transformX, transformY);
+    }
+}
+
+var animation = new SlidingAnimation();
+
 /**
  * Animate the main canvas.
- * @param {number} timestamp Time at which the drawing function was called.
+ * @param {number} timestamp Time at which the function was called.
  */
 function canvasDrawFrame(timestamp) {
-    const update = timestamp - vars.lastFrame;
+    const timespan = timestamp - vars.lastFrame;
     vars.lastFrame = timestamp;
 
     // Gate off cache access until it is ready
@@ -312,28 +403,7 @@ function canvasDrawFrame(timestamp) {
         return;
     }
 
-    // Animate main curve
-    animateCurve(vars.mainCurve, update);
-
-    // Create new curves
-    if (timestamp - vars.lastNewCurve >= consts.newCurveMs) {
-        vars.lastNewCurve = timestamp;
-        vars.curves.push(vars.mainCurve.map(x => x.toPoint()));
-    }
-
-    // Remove curves until maximum is reached
-    while (vars.curves.length > consts.maxCurves) {
-        vars.curves.splice(0, 1);
-    }
-
-    // Render all curves
-    const factorX = ctx.canvas.width;
-    const factorY = consts.verticalCompression * ctx.canvas.height;
-    let yTransform = 0;
-    function transformX(x) { return x * factorX; }
-    function transformY(y) {
-        return (0.7 * ctx.canvas.height) + (factorY * (y - 0.5)) + yTransform;
-    }
+    animation.update(timestamp, timespan);
 
     // Gate off rendering of canvas
     if (!vars.enableRendering) {
@@ -341,35 +411,7 @@ function canvasDrawFrame(timestamp) {
     }
     // No state updates beyond this point!
 
-    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-    ctx.lineWidth = '3';
-    const colours = colourMap.get(colourIndices[currentColoursIndex]);
-    const yPerCurve = -consts.verticalSlideSpeed * ctx.canvas.height;
-    const slideFactor = (timestamp - vars.lastNewCurve) / consts.newCurveMs;
-    yTransform += yPerCurve * (vars.curves.length - 1) + yPerCurve * slideFactor;
-    let colourIndex = 0;
-    for (let i = 0; i < vars.curves.length; ++i) {
-        // Determine colour of curve
-        let colour = colours[colourIndex];
-        const nextColourIndex = Math.floor(colours.length * (i / consts.maxCurves));
-        if (colourIndex !== nextColourIndex) {
-            // Interpolate correct colour for curve
-            colour = colours[nextColourIndex].interpolate(colours[colourIndex], slideFactor);
-            colourIndex = nextColourIndex;
-        }
-        ctx.strokeStyle = colour.toCSS();
-        // Fade out top line
-        if (i == 0) {
-            ctx.strokeStyle = colours[0].toCSSWithA(1 - slideFactor);
-        }
-        renderCurve(vars.curves[i], transformX, transformY);
-        yTransform -= yPerCurve;
-    }
-
-    // Render main curve
-    yTransform = 0;
-    ctx.strokeStyle = colours[colours.length - 1].toCSS();
-    renderCurve(vars.mainCurve, transformX, transformY);
+    animation.draw(ctx, timestamp);
 }
 
 /**
