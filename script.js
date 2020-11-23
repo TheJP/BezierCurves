@@ -172,7 +172,7 @@ const consts = {
     /**
      * Speed with which the curve points move on the [0, 1]^2 plane.
      */
-    curveAnimationSpeed: 0.01,
+    curveAnimationSpeed: 0.0001,
     squaredCurveAnimationSpeed: 0,
     /**
      * Restrict movement per point further in the x direction.
@@ -278,7 +278,13 @@ function animateCurve(curve, timespan) {
         const point = curve[i];
         const distanceX = point.targetX - point.x;
         const distanceY = point.targetY - point.y;
-        if (distanceX * distanceX + distanceY * distanceY <= consts.squaredCurveAnimationSpeed) {
+        const stepX = point.stepX * consts.curveAnimationSpeed * timespan;
+        const stepY = point.stepY * consts.curveAnimationSpeed * timespan;
+        if (distanceX * distanceX + distanceY * distanceY > stepX * stepX + stepY * stepY) {
+            // Animate points with fixed speed towards target
+            point.x += stepX;
+            point.y += stepY;
+        } else {
             // Choose new targets
             point.x = point.targetX;
             point.y = point.targetY;
@@ -287,17 +293,6 @@ function animateCurve(curve, timespan) {
             const norm = Math.sqrt(point.targetX * point.targetX + point.targetY * point.targetY);
             point.stepX = (point.targetX - point.x) / norm;
             point.stepY = (point.targetY - point.y) / norm;
-        } else {
-            // Animate points with fixed speed towards target
-            point.x += point.stepX * consts.squaredCurveAnimationSpeed * timespan;
-            point.y += point.stepY * consts.squaredCurveAnimationSpeed * timespan;
-            // Hotfix for the case that update is so big that the target is skipped
-            const newDistanceX = point.targetX - point.x;
-            const newDistanceY = point.targetY - point.y;
-            if (newDistanceX * newDistanceX + newDistanceY * newDistanceY > distanceX * distanceX + distanceY * distanceY) {
-                point.x = point.targetX;
-                point.y = point.targetY;
-            }
         }
     }
 }
