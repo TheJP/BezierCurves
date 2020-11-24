@@ -421,7 +421,7 @@ class SlidingAnimation extends Animation {
         }
 
         ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-        ctx.lineWidth = '3';
+        ctx.lineWidth = "3";
         const colours = colourMap.get(colourIndices[currentColoursIndex]);
         const yPerCurve = -consts.verticalSlideSpeed * ctx.canvas.height;
         const slideFactor = (timestamp - this.lastNewCurve) / consts.newCurveMs;
@@ -530,7 +530,7 @@ class TwistingAnimation extends Animation {
         }
 
         ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-        ctx.lineWidth = '3';
+        ctx.lineWidth = "3";
         const colours = colourMap.get(colourIndices[currentColoursIndex]);
         const yPerCurve = -consts.verticalSlideSpeed * ctx.canvas.height;
         yTransform += yPerCurve * (this.curves.length - 1);
@@ -544,7 +544,8 @@ class TwistingAnimation extends Animation {
     }
 }
 
-var animation = new TwistingAnimation();
+var animation = window.location.hash === "#sliding" ?
+    new SlidingAnimation() : new TwistingAnimation();
 
 /**
  * Animate the main canvas.
