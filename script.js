@@ -75,7 +75,7 @@ class Colour {
 
     toCSS() { return `rgb(${this.r}, ${this.g}, ${this.b})`; }
     toCSSWithA(a) { return `rgba(${this.r}, ${this.g}, ${this.b}, ${a})`; }
-    
+
     /**
      * Linear interpolation between this colour and the given other colour.
      * @param {Colour} other Colour to interpolate with.
@@ -198,16 +198,26 @@ class Point {
         this.x = x;
         this.y = y;
     }
+
+    /**
+     * Linear interpolation between this point and the given other point.
+     * @param {Point} other Point to interpolate with.
+     * @param {number} factor Interpolation factor in [0, 1] range (0=this point, 1=the other point).
+     */
+    interpolate(other, factor) {
+        return new Point(
+            interpolate(this.x, other.x, factor),
+            interpolate(this.y, other.y, factor));
+    }
 }
 
-class AnimatedPoint {
+class AnimatedPoint extends Point {
     /**
      * @param {number} x X coordinate.
      * @param {number} y Y coordintate.
      */
     constructor(x, y) {
-        this.x = x;
-        this.y = y;
+        super(x, y);
         this.targetX = x;
         this.targetY = y;
         this.stepX = 0;
@@ -215,23 +225,27 @@ class AnimatedPoint {
     }
 
     toPoint() { return new Point(this.x, this.y); }
+
+    /**
+     * Linear interpolation between this point and the given other point.
+     * @param {Point} other Point to interpolate with.
+     * @param {number} factor Interpolation factor in [0, 1] range (0=this point, 1=the other point).
+     */
+    interpolate(other, factor) {
+        return new AnimatedPoint(
+            interpolate(this.x, other.x, factor),
+            interpolate(this.y, other.y, factor));
+    }
 }
 
 /**
  * Inter frame variables.
  */
 var vars = {
+    /**
+     * Timestamp of the previous frame in milliseconds.
+     */
     lastFrame: 0,
-    // Make sure a curve is spawned
-    lastNewCurve: -consts.newCurveMs,
-    /**
-     * @type {Point[][]}
-     */
-    curves: [],
-    /**
-     * @type {AnimatedPoint[]}
-     */
-    mainCurve: [],
     /**
      * Used to disable rendering during warmup phase.
      */
@@ -297,7 +311,34 @@ function animateCurve(curve, timespan) {
     }
 }
 
+/**
+ * Creates curve with random points in the [0,1]x[0,1] plane sorted by their x coordinates.
+ * Additionally the points (-0.1, 0.5) and (1.1, 0.5) are added to the front and resp. to the back.
+ * @param {number} n Dimension of the bezier curve (number control points - 1).
+ * @returns {AnimatedPoint[]} Curve as an array of control points.
+ */
+function createRandomCurve(n) {
+    const xs = [];
+    for (let i = 0; i < n - 1; ++i) {
+        xs.push(Math.random());
+    }
+    xs.sort();
+
+    const curve = [];
+    curve.push(new AnimatedPoint(-0.1, 0.5));
+    for (let i = 0; i < n - 1; ++i) {
+        curve.push(new AnimatedPoint(xs[i], Math.random()));
+    }
+    curve.push(new AnimatedPoint(1.1, 0.5));
+    return curve;
+}
+
 class Animation {
+    /**
+     * Initialise animation.
+     */
+    init() { throw "abstract method stub"; }
+
     /**
      * Update animation state.
      * @param {number} timespan Milliseconds since the last update.
@@ -315,6 +356,34 @@ class Animation {
  * Sliding animation which animates a single curve and slides duplicates of it upwards.
  */
 class SlidingAnimation extends Animation {
+    constructor() {
+        super();
+        /**
+         * Non-animated curves that are sliding upwards.
+         * @type {Point[][]}
+         */
+        this.curves = [];
+
+        /**
+         * Animated curve that stays at the botton.
+         * @type {AnimatedPoint[]}
+         */
+        this.mainCurve = [];
+
+        /**
+         * Timestamp at which the previous curve was spawned in milliseconds.
+         */
+        this.lastNewCurve = -consts.newCurveMs;  // Make sure a curve is spawned.
+    }
+
+    /**
+     * Initialise animation.
+     */
+    init() {
+        this.curves = [];
+        this.mainCurve = createRandomCurve(n);
+    }
+
     /**
      * Update animation state.
      * @param {number} timestamp Time at which the function was called.
@@ -322,17 +391,17 @@ class SlidingAnimation extends Animation {
      */
     update(timestamp, timespan) {
         // Animate main curve
-        animateCurve(vars.mainCurve, timespan);
+        animateCurve(this.mainCurve, timespan);
     
         // Create new curves
-        if (timestamp - vars.lastNewCurve >= consts.newCurveMs) {
-            vars.lastNewCurve = timestamp;
-            vars.curves.push(vars.mainCurve.map(x => x.toPoint()));
+        if (timestamp - this.lastNewCurve >= consts.newCurveMs) {
+            this.lastNewCurve = timestamp;
+            this.curves.push(this.mainCurve.map(x => x.toPoint()));
         }
     
         // Remove curves until maximum is reached
-        while (vars.curves.length > consts.maxCurves) {
-            vars.curves.splice(0, 1);
+        while (this.curves.length > consts.maxCurves) {
+            this.curves.splice(0, 1);
         }
     }
 
@@ -355,10 +424,10 @@ class SlidingAnimation extends Animation {
         ctx.lineWidth = '3';
         const colours = colourMap.get(colourIndices[currentColoursIndex]);
         const yPerCurve = -consts.verticalSlideSpeed * ctx.canvas.height;
-        const slideFactor = (timestamp - vars.lastNewCurve) / consts.newCurveMs;
-        yTransform += yPerCurve * (vars.curves.length - 1) + yPerCurve * slideFactor;
+        const slideFactor = (timestamp - this.lastNewCurve) / consts.newCurveMs;
+        yTransform += yPerCurve * (this.curves.length - 1) + yPerCurve * slideFactor;
         let colourIndex = 0;
-        for (let i = 0; i < vars.curves.length; ++i) {
+        for (let i = 0; i < this.curves.length; ++i) {
             // Determine colour of curve
             let colour = colours[colourIndex];
             const nextColourIndex = Math.floor(colours.length * (i / consts.maxCurves));
@@ -372,18 +441,92 @@ class SlidingAnimation extends Animation {
             if (i == 0) {
                 ctx.strokeStyle = colours[0].toCSSWithA(1 - slideFactor);
             }
-            renderCurve(ctx, vars.curves[i], transformX, transformY);
+            renderCurve(ctx, this.curves[i], transformX, transformY);
             yTransform -= yPerCurve;
         }
 
         // Render main curve
         yTransform = 0;
         ctx.strokeStyle = colours[colours.length - 1].toCSS();
-        renderCurve(ctx, vars.mainCurve, transformX, transformY);
+        renderCurve(ctx, this.mainCurve, transformX, transformY);
     }
 }
 
-var animation = new SlidingAnimation();
+/**
+ * Twisting animation which animates multiple curves and interpolates the curves between them.
+ */
+class TwistingAnimation extends Animation {
+    constructor() {
+        super();
+        /**
+         * Curves that are being animated and interpolated between each other.
+         * @type {AnimatedPoint[][]}
+         */
+        this.curves = [];
+    }
+
+    /**
+     * Initialise animation.
+     */
+    init() {
+        const curves = [];
+        for (let i = 0; i < consts.maxCurves; ++i) {
+            curves.push(createRandomCurve(n));
+        }
+        this.curves = curves;
+    }
+    /**
+     * Update animation state.
+     * @param {number} timestamp Time at which the function was called.
+     * @param {number} timespan Milliseconds since the last update.
+     */
+    update(timestamp, timespan) {
+        // Animate twisting curves
+        // TODO: Guards and more general
+        animateCurve(this.curves[0], timespan);
+        animateCurve(this.curves[this.curves.length - 1], timespan);
+
+        // Interpolate the remaining curves
+        const from = 0;
+        const to = this.curves.length - 1;
+        for (let i = from + 1; i < to; ++i) {
+            for (let p = 1; p < n; ++p) {
+                this.curves[i][p] = this.curves[from][p].interpolate(this.curves[to][p], i / (to - from));
+            }
+        }
+    }
+
+    /**
+     * Draw animation objects.
+     * @param {CanvasRenderingContext2D} ctx Canvas context to draw on.
+     * @param {number} timestamp Time at which the function was called.
+     */
+    draw(ctx, timestamp) {
+        // Render all curves
+        const factorX = ctx.canvas.width;
+        const factorY = consts.verticalCompression * ctx.canvas.height;
+        let yTransform = 0;
+        function transformX(x) { return x * factorX; }
+        function transformY(y) {
+            return (0.7 * ctx.canvas.height) + (factorY * (y - 0.5)) + yTransform;
+        }
+
+        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+        ctx.lineWidth = '3';
+        const colours = colourMap.get(colourIndices[currentColoursIndex]);
+        const yPerCurve = -consts.verticalSlideSpeed * ctx.canvas.height;
+        yTransform += yPerCurve * (this.curves.length - 1);
+        for (let i = 0; i < this.curves.length; ++i) {
+            const colourIndex = Math.floor(colours.length * (i / consts.maxCurves));
+            let colour = colours[colourIndex];
+            ctx.strokeStyle = colour.toCSS();
+            renderCurve(ctx, this.curves[i], transformX, transformY);
+            yTransform -= yPerCurve;
+        }
+    }
+}
+
+var animation = new TwistingAnimation();
 
 /**
  * Animate the main canvas.
@@ -482,24 +625,9 @@ function recalculateCache(newN) {
         cache = cache2;
     }
 
-    // Create main curve
-    const xs = [0];
-    for (let i = 1; i < newN; ++i) {
-        xs.push(Math.random());
-    }
-    xs.sort();
-    const curve = [];
-    curve.push(new AnimatedPoint(-0.1, 0.5));
-    for (let i = 1; i < newN; ++i) {
-        curve.push(new AnimatedPoint(xs[i], Math.random()));
-    }
-    curve.push(new AnimatedPoint(1.1, 0.5));
-
-    // Update to new state
-    n = newN;
-    vars.curves = [];
-    vars.mainCurve = curve;
     binomial = cache;
+    n = newN;
+    animation.init();
     cacheReady = true;
 }
 
