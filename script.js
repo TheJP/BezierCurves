@@ -392,13 +392,13 @@ class SlidingAnimation extends Animation {
     update(timestamp, timespan) {
         // Animate main curve
         animateCurve(this.mainCurve, timespan);
-    
+
         // Create new curves
         if (timestamp - this.lastNewCurve >= consts.newCurveMs) {
             this.lastNewCurve = timestamp;
             this.curves.push(this.mainCurve.map(x => x.toPoint()));
         }
-    
+
         // Remove curves until maximum is reached
         while (this.curves.length > consts.maxCurves) {
             this.curves.splice(0, 1);
@@ -463,6 +463,18 @@ class TwistingAnimation extends Animation {
          * @type {AnimatedPoint[][]}
          */
         this.curves = [];
+
+        this.twistingCurves = 6;  // >= 2
+
+        // Determine positions of the twisting curves
+        this.twistingCurveIndices = [0];
+        const distance = (consts.maxCurves - 2) / (this.twistingCurves - 1);
+        let curveIndex = 0;
+        for (let i = 1; i < this.twistingCurves - 1; ++i) {
+            curveIndex += distance;
+            this.twistingCurveIndices.push(Math.floor(curveIndex));
+        }
+        this.twistingCurveIndices.push(consts.maxCurves - 1);
     }
 
     /**
@@ -475,24 +487,30 @@ class TwistingAnimation extends Animation {
         }
         this.curves = curves;
     }
+
+    /**
+     * Interpolate the two given curves.
+     * @param {number} from Index of the upper curve.
+     * @param {number} to Index of the lower curve.
+     */
+    interpolateCurves(from, to) {
+        for (let i = from + 1; i < to; ++i) {
+            for (let p = 1; p < n; ++p) {
+                this.curves[i][p] = this.curves[from][p].interpolate(this.curves[to][p], (i - from) / (to - from));
+            }
+        }
+    }
+
     /**
      * Update animation state.
      * @param {number} timestamp Time at which the function was called.
      * @param {number} timespan Milliseconds since the last update.
      */
     update(timestamp, timespan) {
-        // Animate twisting curves
-        // TODO: Guards and more general
-        animateCurve(this.curves[0], timespan);
-        animateCurve(this.curves[this.curves.length - 1], timespan);
-
-        // Interpolate the remaining curves
-        const from = 0;
-        const to = this.curves.length - 1;
-        for (let i = from + 1; i < to; ++i) {
-            for (let p = 1; p < n; ++p) {
-                this.curves[i][p] = this.curves[from][p].interpolate(this.curves[to][p], i / (to - from));
-            }
+        animateCurve(this.curves[this.twistingCurveIndices[0]], timespan);
+        for (let i = 1; i < this.twistingCurveIndices.length; ++i) {
+            animateCurve(this.curves[this.twistingCurveIndices[i]], timespan);
+            this.interpolateCurves(this.twistingCurveIndices[i - 1], this.twistingCurveIndices[i]);
         }
     }
 
@@ -559,7 +577,7 @@ function canvasDrawFrame(timestamp) {
 function createRenderingLoop(warmup) {
     vars.lastFrame = -16;
     let artificialTimestamp = 0;
-    for(; artificialTimestamp <= warmup; artificialTimestamp += 16) {
+    for (; artificialTimestamp <= warmup; artificialTimestamp += 16) {
         canvasDrawFrame(artificialTimestamp);
     }
 
@@ -570,7 +588,7 @@ function createRenderingLoop(warmup) {
         if (firstRealTimestamp === 0) {
             firstRealTimestamp = timestamp;
         } else {
-            if (timestamp - lastTimestamp > 1000){
+            if (timestamp - lastTimestamp > 1000) {
                 // Compensate big time gaps (e.g. when the browser tab is inactive for a while)
                 firstRealTimestamp += timestamp - lastTimestamp;
             }
