@@ -605,10 +605,22 @@ function onCanvasClicked() {
     currentColoursIndex = (currentColoursIndex + 1) % colourIndices.length;
 }
 
+/**
+ * @param {MouseEvent} event Mouse event.
+ */
+function onCanvasRightClicked(event) {
+    event.preventDefault();
+    if (currentColoursIndex <= 0) {
+        currentColoursIndex = colourIndices.length
+    }
+    --currentColoursIndex;
+}
+
 // Start animation when 
 window.addEventListener("load", function onWindowLoad() {
     const canvas = window.document.getElementById("canvas");
     canvas.addEventListener("click", onCanvasClicked);
+    canvas.addEventListener("contextmenu", onCanvasRightClicked);
     ctx = canvas.getContext("2d");
 
     // Resize canvas correctly

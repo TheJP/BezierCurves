@@ -1,41 +1,5 @@
 "use strict";
 
-// /**
-//  * Animation constants.
-//  */
-// const consts = {
-//     /**
-//      * How many milliseconds until a new curve is spawned.
-//      */
-//     newCurveMs: 800,
-//     /**
-//      * Amount of curves present at once.
-//      */
-//     maxCurves: 50,
-//     /**
-//      * Amount of line segments that are used per drawn curve.
-//      */
-//     numberOfSegments: 100,
-//     /**
-//      * Speed with which the curve points move on the [0, 1]^2 plane.
-//      */
-//     curveAnimationSpeed: 0.01,
-//     squaredCurveAnimationSpeed: 0,
-//     /**
-//      * Restrict movement per point further in the x direction.
-//      */
-//     maxSegmentPerPoint: 0.3,
-//     /**
-//      * How much the curve points are limited vertically.
-//      */
-//     verticalCompression: 0.35,
-//     /**
-//      * Speed with which the curves slide upwards vertically.
-//      */
-//     verticalSlideSpeed: 0.01,
-// }
-// consts.squaredCurveAnimationSpeed = consts.curveAnimationSpeed * consts.curveAnimationSpeed;
-
 class Creator {
     /**
      * @param {HTMLElement} element Wrapped element.
